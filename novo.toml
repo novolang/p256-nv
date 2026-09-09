@@ -1,6 +1,6 @@
 [package]
 name        = "p256-nv"
-version     = "0.0.1"
+version     = "0.0.2"
 description = "The NIST P-256 curve for BLE LE Secure Connections: a key pair from random bytes the caller supplies, ECDH to a shared X coordinate, and the public-key validation that closes the invalid-curve attack.  Interface only — every body is a todo()."
 license     = "Apache-2.0"
 
@@ -22,6 +22,7 @@ category    = "crypto"
 tags        = ["p256", "secp256r1", "prime256v1", "ecdh", "elliptic-curve", "bluetooth", "le-secure-connections", "fips-186-4", "rfc-6090"]
 repository  = "https://github.com/novolang/p256-nv"
 maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
 
 [docs.pages]
 "README.md" = "P-256 for LE Secure Connections"
