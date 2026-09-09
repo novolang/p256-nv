@@ -1,0 +1,31 @@
+[package]
+name        = "p256-nv"
+version     = "0.0.1"
+description = "The NIST P-256 curve for BLE LE Secure Connections: a key pair from random bytes the caller supplies, ECDH to a shared X coordinate, and the public-key validation that closes the invalid-curve attack.  Interface only — every body is a todo()."
+license     = "Apache-2.0"
+
+# An INTERFACE release: every `pub fn` body is a `todo()`, so the
+# signatures and the effect rows are published and nothing is
+# implemented.  `novo pkg publish` recognises the shape and requires
+# both the draft stability and the 0.0.x version; the first
+# implementation is the 0.1.0 published over it.
+stability   = "draft"
+
+# `core`: every function here is arithmetic over bytes the caller
+# already holds.  Nothing is read and no clock is consulted — the
+# randomness a key pair needs arrives as an argument, which is what
+# lets the same code run in firmware.
+layer       = "core"
+
+category    = "crypto"
+
+tags        = ["p256", "secp256r1", "prime256v1", "ecdh", "elliptic-curve", "bluetooth", "le-secure-connections", "fips-186-4", "rfc-6090"]
+repository  = "https://github.com/novolang/p256-nv"
+maintainers = ["novo-lang"]
+
+[docs.pages]
+"README.md" = "P-256 for LE Secure Connections"
+
+[dependencies]
+# None.  The curve is its own arithmetic: a hash would only be needed
+# for ECDSA, which this package does not offer (see the README).

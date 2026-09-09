@@ -1,0 +1,53 @@
+// tests/embedded_probe.nv — the package's device claim, as a program
+// that either builds for a Cortex-M or does not.
+//
+// The shard audit's `core-embedded` row copies this and the modules its
+// `use` lines reach into a package of their own and runs
+//
+//   novo build --target=nrf52-qemu src/probe.nv
+//
+// which produces a real Cortex-M4 ELF or fails.  The claim it settles
+// is the one that makes `layer = "core"` worth writing: P-256 belongs
+// in firmware, on the pairing path of a peripheral with no operating
+// system under it, and a package that could not compile there would be
+// claiming a budget it does not keep.
+//
+// It BUILDS; it does not run.  Every function it calls is a `todo()`
+// today, so a device that executed this would panic on the first line
+// of `main` — which is the honest state of an interface release, and
+// why this file's job is the compiler's verdict rather than a value.
+// What is being checked is the tier: `--target=nrf52-qemu` stamps
+// `@tier(embedded)` on every function it compiles, so the checker walks
+// the whole module and refuses a `Str` concatenation, a `Bytes` call or
+// an unbounded `while` wherever the implementation later puts one.
+
+use p256
+
+// Thirty-two bytes, built the way firmware would build them: from
+// values it already holds.
+fn scalar_one() -> [u8]
+    var b: [u8] = []
+    for _i in 0..31
+        b = list.append(b, [0 as u8])
+    list.append(b, [1 as u8])
+
+fn main() [hw]
+    // The three shapes the backend lowers differently — a Result over a
+    // struct, an optional over an enum, and a Result over a byte list —
+    // so "it compiles for one return type" is not what this proves.
+    let s: Result<SecretKey, KeyError> = p256.secret_key_from_bytes(scalar_one())
+    match s
+        Err(_)  => hal.uart.write("p256-nv: refused\n")
+        Ok(sec) =>
+            let kp: Result<KeyPair, KeyError> = p256.key_pair_from_secret(sec)
+            match kp
+                Err(_)   => hal.uart.write("p256-nv: no public half\n")
+                Ok(pair) =>
+                    let v: ?KeyError = p256.validate(pair.public)
+                    match v
+                        Some(_) => hal.uart.write("p256-nv: off the curve\n")
+                        None    =>
+                            let d: Result<[u8], KeyError> = p256.ecdh(sec, pair.public)
+                            match d
+                                Err(_) => hal.uart.write("p256-nv: no dhkey\n")
+                                Ok(_)  => hal.uart.write("p256-nv: dhkey\n")

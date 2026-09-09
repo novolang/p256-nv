@@ -1,0 +1,174 @@
+// p256 — the NIST P-256 curve, as much of it as BLE pairing needs.
+//
+// Every body is a `todo()`.  The signatures and the effect rows are
+// the design, and the compiler checks them as claims; see the README
+// for the stamp and for what is deliberately absent.
+//
+// The curve is y² = x³ - 3x + b over the prime field
+// p = 2²⁵⁶ - 2²²⁴ + 2¹⁹² + 2⁹⁶ - 1 (FIPS 186-4 D.1.2.3, also called
+// secp256r1 and prime256v1).  Coordinates and scalars are 32-byte
+// BIG-endian throughout this module, which is the curve's own
+// convention.  SMP puts them on the wire little-endian; that reversal
+// belongs to smp-nv, not here, because it is a property of the
+// Bluetooth PDU rather than of the curve.
+
+// The width of a private scalar, in bytes.
+pub const SCALAR_BYTES = 32
+
+// The width of one affine coordinate, in bytes.
+pub const COORDINATE_BYTES = 32
+
+// The width of an uncompressed public key as `x ‖ y`, in bytes.  This
+// is the 64-byte form LE Secure Connections carries in
+// Pairing_Public_Key; the 0x04 lead byte of SEC1's uncompressed
+// encoding is not part of it.
+pub const PUBLIC_KEY_BYTES = 64
+
+// The width of the ECDH shared secret, in bytes.  It is the X
+// coordinate of the shared point and nothing else — the Y coordinate
+// is discarded, which is what Core Vol 3 Part H § 2.3.5.6.1 means by
+// DHKey.
+pub const DHKEY_BYTES = 32
+
+// A public key as its two affine coordinates.
+//
+// Both are exactly `COORDINATE_BYTES` big-endian bytes.  A value of
+// this type has NOT been validated: it may be off the curve, and
+// `validate` is what says so.  The constructor is the only place that
+// checks the lengths, so a key that exists has the right shape and may
+// still be the wrong point.
+pub struct PublicKey
+    x: [u8]
+    y: [u8]
+
+// A private scalar.
+//
+// Exactly `SCALAR_BYTES` big-endian bytes, in `1 ..= n-1` where n is
+// the curve order.  Zero and anything at or above n are refused by the
+// constructor, because a scalar outside that range does not name a
+// point.
+pub struct SecretKey
+    d: [u8]
+
+// A private scalar and the public point it generates.
+//
+// The two halves are always consistent: there is no constructor that
+// takes both, only ones that derive the public half from the secret.
+pub struct KeyPair
+    public: PublicKey
+    secret: SecretKey
+
+// Why a key or a shared secret could not be produced.
+//
+// Every variant is a refusal, not a failure — none of them means the
+// arithmetic went wrong, and a caller that gets one has been handed
+// bytes that do not name a key.
+pub enum KeyError
+    // A byte list of the wrong width reached a constructor.
+    BadLength(got: Int, want: Int)
+    // A scalar that is zero, or at or above the curve order n.  Neither
+    // names a point on the curve.
+    ScalarOutOfRange
+    // A coordinate pair that does not satisfy y² = x³ - 3x + b.  This
+    // is the invalid-curve attack (CVE-2018-5383): a peer that sends
+    // one and is not refused leaks the local private key over a few
+    // pairings, so `ecdh` refuses rather than computing.
+    NotOnCurve
+    // The point at infinity, which has no affine coordinates and is not
+    // a legal public key.
+    PointAtInfinity
+
+// What went wrong, in words, for a caller that logs rather than
+// branches.
+//
+// `Result<_, KeyError>` requires it: SPEC § 3.4 admits a `Result`
+// error type only if it implements `Error`, so this impl is what makes
+// every constructor below able to name its own refusal instead of
+// returning `Result<_, Str>`.
+impl Error for KeyError
+    fn message(self) -> Str
+        todo("p256.KeyError.message")
+
+// Read a private scalar from 32 big-endian bytes.
+//
+// Refuses `BadLength` for anything but `SCALAR_BYTES`, and
+// `ScalarOutOfRange` for zero or for a value at or above the curve
+// order.  This is the only way to make a `SecretKey`, so a value of
+// that type is always a usable scalar.
+pub fn secret_key_from_bytes(bytes: [u8]) -> Result<SecretKey, KeyError>
+    todo("p256.secret_key_from_bytes")
+
+// Read a public key from its two 32-byte big-endian coordinates.
+//
+// Checks the two widths and nothing else: a key that comes back from
+// this may still be off the curve, and `validate` is the call that
+// says so.  The split is deliberate — a caller that parses a PDU wants
+// to know it has 64 bytes before it spends a field inversion finding
+// out the peer sent a bad point.
+pub fn public_key_from_bytes(x: [u8], y: [u8]) -> Result<PublicKey, KeyError>
+    todo("p256.public_key_from_bytes")
+
+// The public key as `x ‖ y`, `PUBLIC_KEY_BYTES` big-endian bytes.
+//
+// The inverse of `public_key_from_bytes` on a well-formed key.
+pub fn public_key_bytes(key: PublicKey) -> [u8]
+    todo("p256.public_key_bytes")
+
+// The private scalar as `SCALAR_BYTES` big-endian bytes.
+//
+// Present so a caller can persist a bond; it is the one function here
+// that hands out key material, and the reason it is on this package
+// rather than smp-nv is that the byte order is the curve's.
+pub fn secret_key_bytes(key: SecretKey) -> [u8]
+    todo("p256.secret_key_bytes")
+
+// Derive the public half of a key pair from a private scalar.
+//
+// One scalar multiplication of the curve's base point G.  Refuses only
+// what `secret_key_from_bytes` already refuses, so on a `SecretKey`
+// this cannot fail in practice; the `Result` is there because the
+// implementation may not assume the type was built by that
+// constructor.
+pub fn key_pair_from_secret(secret: SecretKey) -> Result<KeyPair, KeyError>
+    todo("p256.key_pair_from_secret")
+
+// Build a key pair from random bytes the CALLER supplies.
+//
+// This package has no `[rand]` row and never will: entropy is the
+// host's, and a `core` package that reached for it could not run in
+// firmware.  Hand it at least `SCALAR_BYTES` bytes from a source you
+// trust — an nRF52's RNG peripheral, `/dev/urandom`, a DRBG — and it
+// reduces them to a scalar in `1 ..= n-1` by FIPS 186-4 B.4.2's
+// testing-candidates method.
+//
+// `ScalarOutOfRange` comes back when the bytes reduce to zero, which a
+// caller answers by supplying different bytes rather than by retrying
+// with the same ones.
+pub fn key_pair_from_random(random_bytes: [u8]) -> Result<KeyPair, KeyError>
+    todo("p256.key_pair_from_random")
+
+// Check that a public key is a point this curve will accept.
+//
+// Answers `None` when the key is good, and the reason otherwise.  It
+// tests the two things that matter: that the coordinates satisfy the
+// curve equation, and that the point is not at infinity.  A cofactor
+// check is not among them because P-256 has cofactor 1, so every point
+// on the curve is in the prime-order group.
+//
+// Call it on the PEER's key before `ecdh`, every time, including when
+// the peer is a device you have paired with before.
+pub fn validate(key: PublicKey) -> ?KeyError
+    todo("p256.validate")
+
+// The ECDH shared secret: the X coordinate of `secret · peer`.
+//
+// `DHKEY_BYTES` big-endian bytes, which is what Core Vol 3 Part H
+// § 2.3.5.6.1 calls DHKey and hands to f5.  The Y coordinate is
+// discarded.
+//
+// It validates `peer` first and refuses `NotOnCurve` or
+// `PointAtInfinity` rather than computing — the arithmetic on a bad
+// point is what leaks the local scalar, so the check cannot be a
+// caller's option.
+pub fn ecdh(secret: SecretKey, peer: PublicKey) -> Result<[u8], KeyError>
+    todo("p256.ecdh")

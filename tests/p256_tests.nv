@@ -1,0 +1,114 @@
+// tests/p256_api.nv — the API tests, written against the signatures.
+//
+// They COMPILE today and they FAIL at run, with `not implemented:
+// p256.<fn>` from the `todo()` that is each body.  That is the expected
+// state of an interface release: the compiler has checked every
+// signature, every type and every effect row, and nothing else has been
+// checked because there is nothing else yet.
+//
+// What each test asserts is what the implementation lane has to make
+// true, so they turn green one at a time as bodies land rather than
+// having to be written then.
+
+use std.test
+use p256
+
+// 32 bytes that are a legal scalar: 1, big-endian.
+fn scalar_one() -> [u8]
+    var b: [u8] = []
+    for _i in 0..31
+        b = list.append(b, [0 as u8])
+    list.append(b, [1 as u8])
+
+// 32 zero bytes — a scalar this curve refuses.
+fn scalar_zero() -> [u8]
+    var b: [u8] = []
+    for _i in 0..32
+        b = list.append(b, [0 as u8])
+    b
+
+@test
+fn test_the_widths_are_the_curve_s()
+    // These are the one part of the interface that is real today: a
+    // caller sizing a buffer can rely on them before any body lands.
+    test.assert_eq(p256.SCALAR_BYTES, 32)
+    test.assert_eq(p256.COORDINATE_BYTES, 32)
+    test.assert_eq(p256.PUBLIC_KEY_BYTES, 64)
+    test.assert_eq(p256.DHKEY_BYTES, 32)
+    // A public key is its two coordinates and no lead byte.
+    test.assert_eq(p256.PUBLIC_KEY_BYTES, 2 * p256.COORDINATE_BYTES)
+
+@test
+fn test_a_scalar_of_the_right_width_is_read()
+    match p256.secret_key_from_bytes(scalar_one())
+        Ok(k)  => test.assert_eq(list.len(p256.secret_key_bytes(k)), 32)
+        Err(_) => test.fail("a 32-byte scalar of 1 is in 1..=n-1")
+
+@test
+fn test_a_short_scalar_is_refused_by_length()
+    match p256.secret_key_from_bytes([0 as u8, 1 as u8])
+        Ok(_)  => test.fail("two bytes are not a P-256 scalar")
+        Err(e) =>
+            match e
+                BadLength(got, want) =>
+                    test.assert_eq(got, 2)
+                    test.assert_eq(want, 32)
+                _                    => test.fail("a width problem is BadLength, not another variant")
+
+@test
+fn test_a_zero_scalar_is_refused_as_out_of_range()
+    match p256.secret_key_from_bytes(scalar_zero())
+        Ok(_)  => test.fail("zero does not name a point")
+        Err(e) =>
+            match e
+                ScalarOutOfRange => test.assert(true)
+                _                => test.fail("zero is out of range, not the wrong width")
+
+@test
+fn test_the_public_half_comes_from_the_secret()
+    match p256.secret_key_from_bytes(scalar_one())
+        Err(_) => test.fail("scalar 1 is legal")
+        Ok(s)  =>
+            match p256.key_pair_from_secret(s)
+                Err(_) => test.fail("a legal scalar has a public half")
+                Ok(kp) =>
+                    // d = 1 makes the public point G itself, so the
+                    // encoding is exactly 64 bytes.
+                    test.assert_eq(list.len(p256.public_key_bytes(kp.public)), 64)
+
+@test
+fn test_random_bytes_of_a_scalar_s_width_make_a_pair()
+    match p256.key_pair_from_random(scalar_one())
+        Err(_) => test.fail("32 bytes that reduce into range make a pair")
+        Ok(kp) => test.assert_eq(list.len(p256.secret_key_bytes(kp.secret)), 32)
+
+@test
+fn test_a_point_off_the_curve_does_not_validate()
+    // x = y = 1 satisfies nothing: 1 ≠ 1 - 3 + b.
+    match p256.public_key_from_bytes(scalar_one(), scalar_one())
+        Err(_) => test.fail("two 32-byte coordinates are the right shape")
+        Ok(k)  =>
+            match p256.validate(k)
+                None    => test.fail("(1, 1) is not on P-256")
+                Some(e) =>
+                    match e
+                        NotOnCurve => test.assert(true)
+                        _          => test.fail("the curve equation is what fails here")
+
+@test
+fn test_ecdh_refuses_a_peer_key_it_could_not_validate()
+    // The whole point of the refusal: the arithmetic on a bad point is
+    // what leaks the local scalar, so this may not be a caller's
+    // option.
+    match p256.secret_key_from_bytes(scalar_one())
+        Err(_) => test.fail("scalar 1 is legal")
+        Ok(s)  =>
+            match p256.public_key_from_bytes(scalar_one(), scalar_one())
+                Err(_)   => test.fail("two 32-byte coordinates are the right shape")
+                Ok(peer) =>
+                    match p256.ecdh(s, peer)
+                        Ok(_)  => test.fail("ecdh must refuse a point off the curve")
+                        Err(e) =>
+                            match e
+                                NotOnCurve => test.assert(true)
+                                _          => test.fail("the refusal names the curve equation")
