@@ -1,6 +1,6 @@
 [package]
 name        = "p256-nv"
-version     = "0.0.2"
+version     = "0.0.3"
 description = "The NIST P-256 curve for BLE LE Secure Connections: a key pair from random bytes the caller supplies, ECDH to a shared X coordinate, and the public-key validation that closes the invalid-curve attack.  Interface only — every body is a todo()."
 license     = "Apache-2.0"
 
